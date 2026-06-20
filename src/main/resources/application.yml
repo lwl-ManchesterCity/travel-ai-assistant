@@ -1,0 +1,30 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: travel-assistant
+travel:
+  llm:
+    enabled: ${TRAVEL_LLM_ENABLED:false}
+    provider: ${TRAVEL_LLM_PROVIDER:dashscope}
+    base-url: ${TRAVEL_LLM_BASE_URL:https://dashscope.aliyuncs.com/compatible-mode/v1}
+    api-key: ${TRAVEL_LLM_API_KEY:${DASHSCOPE_API_KEY:}}
+    model: ${TRAVEL_LLM_MODEL:qwen-plus}
+    temperature: ${TRAVEL_LLM_TEMPERATURE:0.2}
+  providers:
+    attraction: amap
+    weather: amap
+    hotel: amap
+    route: amap
+    amap:
+      api-key: ${AMAP_API_KEY:}
+      base-url: http://restapi.amap.com
+      mock-response: false
+      route-strategy: "0"
+      route-extensions: base
+      curl-fallback-enabled: true
+      poi-page-size: 10
+      city-limit: true
+      web-js-key: ${AMAP_WEB_JS_KEY:}
+      security-js-code: ${AMAP_SECURITY_JS_CODE:}
