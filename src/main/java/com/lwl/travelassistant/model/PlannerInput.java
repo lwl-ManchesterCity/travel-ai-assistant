@@ -11,6 +11,7 @@ public class PlannerInput {
     private PlanningConstraints constraints;
     private List<String> planningNotes;
     private String plannerQuery;
+    private List<AgentTrace> agentTraces;
 
     public PlannerInput() {
     }
@@ -21,7 +22,8 @@ public class PlannerInput {
                         HotelSearchResult hotelResult,
                         PlanningConstraints constraints,
                         List<String> planningNotes,
-                        String plannerQuery) {
+                        String plannerQuery,
+                        List<AgentTrace> agentTraces) {
         this.request = request;
         this.attractionResult = attractionResult;
         this.weatherResult = weatherResult;
@@ -29,6 +31,7 @@ public class PlannerInput {
         this.constraints = constraints;
         this.planningNotes = planningNotes;
         this.plannerQuery = plannerQuery;
+        this.agentTraces = agentTraces;
     }
 
     public TripPlanRequest getRequest() {
@@ -85,5 +88,13 @@ public class PlannerInput {
 
     public void setPlannerQuery(String plannerQuery) {
         this.plannerQuery = plannerQuery;
+    }
+
+    public List<AgentTrace> getAgentTraces() {
+        return agentTraces;
+    }
+
+    public void setAgentTraces(List<AgentTrace> agentTraces) {
+        this.agentTraces = agentTraces;
     }
 }

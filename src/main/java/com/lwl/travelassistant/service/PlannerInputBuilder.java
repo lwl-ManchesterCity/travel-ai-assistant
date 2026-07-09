@@ -4,6 +4,7 @@ import com.lwl.travelassistant.agent.AttractionAgent;
 import com.lwl.travelassistant.agent.HotelAgent;
 import com.lwl.travelassistant.agent.WeatherAgent;
 import com.lwl.travelassistant.exception.TripPlanningException;
+import com.lwl.travelassistant.model.AgentTrace;
 import com.lwl.travelassistant.model.AttractionSearchResult;
 import com.lwl.travelassistant.model.HotelSearchResult;
 import com.lwl.travelassistant.model.PlannerInput;
@@ -40,6 +41,7 @@ public class PlannerInputBuilder {
         PlanningConstraints constraints = requirementAnalysisService.analyze(request);
         validatePlanningInputs(attractionResult, weatherResult, hotelResult);
         List<String> planningNotes = buildPlanningNotes(request, attractionResult, weatherResult, hotelResult, constraints);
+        List<AgentTrace> agentTraces = buildAgentTraces(request, attractionResult, weatherResult, hotelResult, constraints);
 
         return new PlannerInput(
                 request,
@@ -48,7 +50,8 @@ public class PlannerInputBuilder {
                 hotelResult,
                 constraints,
                 planningNotes,
-                buildPlannerQuery(request, attractionResult, weatherResult, hotelResult, constraints)
+                buildPlannerQuery(request, attractionResult, weatherResult, hotelResult, constraints),
+                agentTraces
         );
     }
 
@@ -89,6 +92,47 @@ public class PlannerInputBuilder {
             notes.add("识别出的规划约束：" + String.join("、", constraints.getExtractedTags()));
         }
         return notes;
+    }
+
+    private List<AgentTrace> buildAgentTraces(TripPlanRequest request,
+                                              AttractionSearchResult attractionResult,
+                                              WeatherQueryResult weatherResult,
+                                              HotelSearchResult hotelResult,
+                                              PlanningConstraints constraints) {
+        List<AgentTrace> traces = new ArrayList<>();
+        traces.add(new AgentTrace(
+                "AttractionAgent",
+                "检索候选景点",
+                "城市=" + request.getCity() + "，偏好=" + String.join("、", request.getPreferences()),
+                "获得 " + attractionResult.getAttractions().size() + " 个候选景点，来源=" + attractionResult.getProvider().getProviderName(),
+                "success"
+        ));
+        traces.add(new AgentTrace(
+                "WeatherAgent",
+                "查询出行天气",
+                "城市=" + request.getCity() + "，日期=" + request.getStartDate() + " 至 " + request.getEndDate(),
+                "获得 " + weatherResult.getWeatherInfo().size() + " 天天气，来源=" + weatherResult.getProvider().getProviderName(),
+                "success"
+        ));
+        traces.add(new AgentTrace(
+                "HotelAgent",
+                "推荐住宿候选",
+                "城市=" + request.getCity() + "，住宿偏好=" + request.getAccommodation(),
+                "获得 " + hotelResult.getHotels().size() + " 个候选酒店，来源=" + hotelResult.getProvider().getProviderName(),
+                "success"
+        ));
+        traces.add(new AgentTrace(
+                "RequirementAnalysisService",
+                "解析自然语言额外要求",
+                request.getExtraRequirements() == null || request.getExtraRequirements().isBlank()
+                        ? "用户未填写额外要求"
+                        : request.getExtraRequirements(),
+                constraints.getExtractedTags() == null || constraints.getExtractedTags().isEmpty()
+                        ? "未识别到额外约束"
+                        : "识别约束：" + String.join("、", constraints.getExtractedTags()),
+                "success"
+        ));
+        return traces;
     }
 
     private String buildPlannerQuery(TripPlanRequest request,

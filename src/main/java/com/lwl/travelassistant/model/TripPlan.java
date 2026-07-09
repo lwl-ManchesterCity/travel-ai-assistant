@@ -12,6 +12,7 @@ public class TripPlan {
     private String overallSuggestions;
     private Budget budget;
     private List<String> planningNotes;
+    private List<AgentTrace> agentTraces;
 
     public TripPlan() {
     }
@@ -23,7 +24,8 @@ public class TripPlan {
                     List<WeatherInfo> weatherInfo,
                     String overallSuggestions,
                     Budget budget,
-                    List<String> planningNotes) {
+                    List<String> planningNotes,
+                    List<AgentTrace> agentTraces) {
         this.city = city;
         this.startDate = startDate;
         this.endDate = endDate;
@@ -32,6 +34,7 @@ public class TripPlan {
         this.overallSuggestions = overallSuggestions;
         this.budget = budget;
         this.planningNotes = planningNotes;
+        this.agentTraces = agentTraces;
     }
 
     public String getCity() {
@@ -96,5 +99,13 @@ public class TripPlan {
 
     public void setPlanningNotes(List<String> planningNotes) {
         this.planningNotes = planningNotes;
+    }
+
+    public List<AgentTrace> getAgentTraces() {
+        return agentTraces;
+    }
+
+    public void setAgentTraces(List<AgentTrace> agentTraces) {
+        this.agentTraces = agentTraces;
     }
 }

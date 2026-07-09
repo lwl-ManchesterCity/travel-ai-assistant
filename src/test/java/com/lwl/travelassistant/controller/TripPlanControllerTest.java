@@ -65,7 +65,9 @@ class TripPlanControllerTest {
                 )),
                 List.of(new WeatherInfo("2026-07-01", "多云到晴", "晴", 28, 22, "东北风", "2级")),
                 "杭州 3 天旅行计划",
-                new Budget(150, 1200, 540, 300, 2190)
+                new Budget(150, 1200, 540, 300, 2190),
+                List.of("测试规划备注"),
+                List.of()
         );
 
         when(tripPlanningService.planTrip(any(TripPlanRequest.class))).thenReturn(response);

@@ -1,9 +1,10 @@
 package com.lwl.travelassistant.agent;
 
-import com.lwl.travelassistant.evaluator.DailyPlanEvaluator;
 import com.lwl.travelassistant.model.Attraction;
+import com.lwl.travelassistant.model.AgentTrace;
 import com.lwl.travelassistant.model.Budget;
 import com.lwl.travelassistant.model.DailyPlanEvaluation;
+import com.lwl.travelassistant.model.DailyPlanReflection;
 import com.lwl.travelassistant.model.DayPlan;
 import com.lwl.travelassistant.model.Hotel;
 import com.lwl.travelassistant.model.Location;
@@ -30,14 +31,14 @@ import java.util.StringJoiner;
 public class PlannerAgent {
 
     private final RouteAgent routeAgent;
-    private final DailyPlanEvaluator dailyPlanEvaluator;
+    private final ReflectionAgent reflectionAgent;
     private final LlmNarrationService llmNarrationService;
 
     public PlannerAgent(RouteAgent routeAgent,
-                        DailyPlanEvaluator dailyPlanEvaluator,
+                        ReflectionAgent reflectionAgent,
                         LlmNarrationService llmNarrationService) {
         this.routeAgent = routeAgent;
-        this.dailyPlanEvaluator = dailyPlanEvaluator;
+        this.reflectionAgent = reflectionAgent;
         this.llmNarrationService = llmNarrationService;
     }
 
@@ -48,6 +49,9 @@ public class PlannerAgent {
         List<Hotel> hotels = plannerInput.getHotelResult().getHotels();
         PlanningConstraints constraints = plannerInput.getConstraints();
         List<DayPlan> dayPlans = new ArrayList<>();
+        List<AgentTrace> agentTraces = plannerInput.getAgentTraces() == null
+                ? new ArrayList<>()
+                : new ArrayList<>(plannerInput.getAgentTraces());
         Set<String> usedAttractionNames = new HashSet<>();
         LocalDate startDate = LocalDate.parse(request.getStartDate());
         int dailyBudgetLimit = Math.max(200, request.getBudget() / request.calculateDays());
@@ -82,6 +86,7 @@ public class PlannerAgent {
                     hotels,
                     attractions,
                     usedAttractionNames,
+                    agentTraces,
                     dayIndex,
                     dailyBudgetLimit,
                     currentWeather,
@@ -115,6 +120,7 @@ public class PlannerAgent {
         } else {
             planningNotes.add("结果文案来源：规则文案");
         }
+        planningNotes.add("ReflectionAgent 已对每日方案完成预算、路线、天气反思评估");
 
         String overallSuggestions = buildOverallSuggestions(request, weatherInfo, planningNotes, dayPlans);
         overallSuggestions = llmNarrationService.polishOverallSuggestions(
@@ -133,7 +139,8 @@ public class PlannerAgent {
                 weatherInfo,
                 overallSuggestions,
                 buildBudget(dayPlans, request.getBudget()),
-                planningNotes
+                planningNotes,
+                agentTraces
         );
     }
     //从候选景点里，挑出“今天要去的景点”
@@ -358,6 +365,7 @@ public class PlannerAgent {
                                               List<Hotel> hotels,
                                               List<Attraction> allAttractions,
                                               Set<String> usedAttractionNames,
+                                              List<AgentTrace> agentTraces,
                                               int dayIndex,
                                               int dailyBudgetLimit,
                                               WeatherInfo currentWeather,
@@ -382,21 +390,37 @@ public class PlannerAgent {
                     workingAttractions
             ));
             int estimatedCost = estimateDailyCost(workingAttractions, workingHotel, meals, routePlan);
-            DailyPlanEvaluation evaluation = dailyPlanEvaluator.evaluate(
+            agentTraces.add(new AgentTrace(
+                    "PlannerAgent",
+                    "生成第" + (dayIndex + 1) + "天候选方案",
+                    "候选景点=" + joinAttractionNames(workingAttractions) + "，酒店=" + safeHotelName(workingHotel),
+                    "预计花费=" + estimatedCost + "元，通勤=" + (routePlan == null ? 0 : routePlan.getTotalDurationMinutes()) + "分钟",
+                    "generated"
+            ));
+            DailyPlanReflection reflection = reflectionAgent.reflectDailyPlan(
                     estimatedCost,
                     dailyBudgetLimit,
                     routePlan,
                     constraints,
                     currentWeather
             );
-            if (evaluation.isAcceptable()) {
+            DailyPlanEvaluation evaluation = reflection.getEvaluation();
+            appendReflectionNotes(notes, reflection.getReflectionNotes());
+            agentTraces.add(new AgentTrace(
+                    "ReflectionAgent",
+                    "反思第" + (dayIndex + 1) + "天候选方案",
+                    "预算上限=" + dailyBudgetLimit + "元，天气=" + (currentWeather == null ? "未知" : currentWeather.getDayWeather()),
+                    reflection.getReason() + "，建议动作=" + reflection.getRecommendedAction(),
+                    reflection.isAcceptable() ? "accepted" : "need_revision"
+            ));
+            if (reflection.isAcceptable()) {
                 return new DailyPlanDecision(workingHotel, workingAttractions, transportation, meals, routePlan, estimatedCost, notes);
             }
             if (adjustRounds >= 6) {
                 notes.add("已达到预算压缩上限，当前方案为可生成的最低配版本");
                 return new DailyPlanDecision(workingHotel, workingAttractions, transportation, meals, routePlan, estimatedCost, notes);
             }
-            if (evaluation.isIndoorAdjustmentRecommended()) {
+            if (recommends(reflection, "replace_with_indoor")) {
                 appendDiagnosis(notes, evaluation.getWeatherDiagnosis());
                 Attraction indoorReplacementTarget = findOutdoorAttractionForReplacement(workingAttractions);
                 Attraction indoorAlternative = selectReplacementAttraction(
@@ -417,7 +441,7 @@ public class PlannerAgent {
                     continue;
                 }
             }
-            if (evaluation.isOverBudget() && !hotelAdjusted) {
+            if (recommends(reflection, "reduce_budget") && !hotelAdjusted) {
                 appendDiagnosis(notes, evaluation.getBudgetDiagnosis());
                 Hotel cheaperHotel = selectBudgetFriendlyHotel(hotels, workingAttractions, dailyBudgetLimit, workingHotel);
                 if (cheaperHotel != null && cheaperHotel != workingHotel) {
@@ -427,7 +451,7 @@ public class PlannerAgent {
                     continue;
                 }
             }
-            if (evaluation.isOverBudget()) {
+            if (recommends(reflection, "reduce_budget")) {
                 appendDiagnosis(notes, evaluation.getBudgetDiagnosis());
                 Attraction expensiveTarget = findMostExpensiveAttraction(workingAttractions);
                 Attraction cheaperAlternative = selectReplacementAttraction(
@@ -448,7 +472,7 @@ public class PlannerAgent {
                     continue;
                 }
             }
-            if (evaluation.isRouteTooLong()) {
+            if (recommends(reflection, "compress_route")) {
                 appendDiagnosis(notes, evaluation.getRouteDiagnosis());
                 Attraction farthestTarget = findFarthestAttraction(workingAttractions, workingHotel);
                 Attraction closerAlternative = selectReplacementAttraction(
@@ -662,6 +686,19 @@ public class PlannerAgent {
         }
         notes.add(diagnosis);
     }
+
+    private void appendReflectionNotes(List<String> notes, List<String> reflectionNotes) {
+        if (reflectionNotes == null || reflectionNotes.isEmpty()) {
+            return;
+        }
+        for (String reflectionNote : reflectionNotes) {
+            appendDiagnosis(notes, reflectionNote);
+        }
+    }
+
+    private boolean recommends(DailyPlanReflection reflection, String action) {
+        return reflection != null && action.equals(reflection.getRecommendedAction());
+    }
     //判断交通方式，如果前端有传就用前端的，如果没有就遍历景点的duringtime总和返回推荐交通方式
     private String decideTransportation(TripPlanRequest request,
                                         PlanningConstraints constraints,
@@ -781,6 +818,21 @@ public class PlannerAgent {
             joiner.add(preference);
         }
         return joiner.toString();
+    }
+
+    private String joinAttractionNames(List<Attraction> attractions) {
+        if (attractions == null || attractions.isEmpty()) {
+            return "无";
+        }
+        StringJoiner joiner = new StringJoiner("、");
+        for (Attraction attraction : attractions) {
+            joiner.add(attraction.getName());
+        }
+        return joiner.toString();
+    }
+
+    private String safeHotelName(Hotel hotel) {
+        return hotel == null ? "未选择酒店" : hotel.getName();
     }
     //根据景点中心位置和酒店价格获取besthotel
     private Hotel selectHotel(List<Hotel> hotels, List<Attraction> attractions, int dailyBudgetLimit) {

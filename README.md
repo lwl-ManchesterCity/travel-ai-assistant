@@ -32,6 +32,8 @@
 * **多 Agent 协作**：拆分景点、酒店、天气、路线、规划、调整等 Agent，职责边界清晰。
 * **真实地图能力**：接入高德地图 POI 搜索、酒店检索、天气预报、路线规划和 Web 地图 JS SDK。
 * **LLM 能力接入**：通过 OpenAI-Compatible 接口接入通义千问，支持自然语言需求解析、行程调整和结果文案润色。
+* **Agent 反思闭环**：`PlannerAgent` 先生成候选方案，再由 `ReflectionAgent` 基于预算、路线和天气进行评估与修正建议。
+* **Agent 轨迹可视化**：记录各 Agent 的输入、动作、输出和状态，前端可直接查看智能体执行过程。
 * **结构化行程输出**：返回每日景点、酒店、餐饮、路线、预算、天气、地图点位等可消费数据。
 * **预算与路线约束**：在规划阶段加入预算控制、跨天去重、通勤距离压缩、酒店优选和路线评估。
 * **前端完整展示**：支持旅行表单、结果页、预算明细、真实地图、每日路线切换、行程编辑和调整反馈。
@@ -105,6 +107,7 @@ TripPlanController
       -> WeatherAgent    -> WeatherClient    -> AmapWeatherClient
       -> RequirementAnalysisService          -> LLM
     -> PlannerAgent
+      -> ReflectionAgent -> DailyPlanEvaluator
       -> RouteAgent      -> RouteClient      -> AmapRouteClient
     -> TripPlan
 ```
@@ -262,10 +265,10 @@ Provider 支持切换为真实高德接口或本地兜底实现：
 ```yaml
 travel:
   providers:
-    attraction: amap
-    weather: amap
-    hotel: amap
-    route: amap
+    attraction: amap # 或 mock
+    weather: amap    # 或 mock
+    hotel: amap      # 或 mock
+    route: amap      # 或 mock
 ```
 
 ## 打包与部署
@@ -293,7 +296,6 @@ java -jar target/travel-assistant-0.0.1-SNAPSHOT.jar
 * Systemd 管理后端进程
 * Nginx 反向代理到 Spring Boot 服务
 * 环境变量文件保存 API Key
-* 日志文件记录运行状态和异常信息
 
 ## 测试
 
@@ -305,8 +307,8 @@ mvn test
 
 当前测试重点：
 
-* `TripPlanControllerTest`：验证接口成功返回和参数校验
-* `PlannerAgentTest`：验证规划链路核心逻辑
+* `TripPlanControllerTest`：验证接口成功返回和参数校验。
+* `PlannerAgentTest`：验证规划链路核心逻辑。
 
 ## GitHub 提交前注意
 
@@ -316,9 +318,7 @@ mvn test
 * 高德 Web JS Key
 * 高德安全密钥
 * DashScope API Key
-* 服务器密码
-* SSH 私钥
-* 本地环境变量文件
+* 服务器密码、SSH 密钥、环境变量文件
 
 建议提交前检查：
 
@@ -330,15 +330,8 @@ git diff
 ## 后续优化方向
 
 * 接入真实景点图片来源，替换当前占位图
-* 将前端拆分为 Vue 或 React 单独工程
+* 将前端拆成 Vue / React 独立工程
 * 增加用户登录和历史行程保存
 * 增加更完整的 Agent 评估指标和 Benchmark
 * 引入缓存，降低高德 API 和 LLM 调用频率
 * 增加 Dockerfile 和 Docker Compose，简化部署
-* 增加更完善的接口文档和系统架构图
-
-## 项目总结
-
-本项目围绕智能旅行规划场景，完成了从用户需求输入、Agent 信息收集、LLM 语义增强、路线与预算评估，到前端可视化展示的完整链路。
-
-相比简单的 AI 文案生成项目，本项目更强调工程落地：将大模型能力、第三方地图服务、规则兜底逻辑和 Spring Boot 后端服务进行组合，形成一个可运行、可展示、可部署的 Java Agent 应用。

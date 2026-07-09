@@ -985,6 +985,51 @@
             color: #d94457;
         }
 
+        .agent-trace-list {
+            display: grid;
+            gap: 12px;
+        }
+
+        .agent-trace-item {
+            display: grid;
+            grid-template-columns: 150px 1fr;
+            gap: 14px;
+            padding: 16px;
+            border-radius: 16px;
+            background: linear-gradient(180deg, #f8faff, #ffffff);
+            border: 1px solid #e3e8f6;
+        }
+
+        .agent-trace-agent {
+            color: var(--primary);
+            font-size: 15px;
+            font-weight: 900;
+        }
+
+        .agent-trace-action {
+            margin-bottom: 8px;
+            color: #27314f;
+            font-size: 15px;
+            font-weight: 900;
+        }
+
+        .agent-trace-meta {
+            color: #5f6c86;
+            font-size: 13px;
+            line-height: 1.7;
+        }
+
+        .agent-trace-status {
+            display: inline-flex;
+            margin-top: 8px;
+            padding: 5px 10px;
+            border-radius: 999px;
+            background: rgba(101, 117, 230, 0.1);
+            color: var(--primary);
+            font-size: 12px;
+            font-weight: 900;
+        }
+
         .extra-box {
             margin-top: 14px;
             padding: 12px 14px;
@@ -1013,7 +1058,8 @@
             .budget-grid,
             .hotel-meta,
             .overview-strip,
-            .weather-panel {
+            .weather-panel,
+            .agent-trace-item {
                 grid-template-columns: 1fr;
             }
 
@@ -1178,6 +1224,7 @@
                     <div class="nav-item" data-target="map-section">📍 景点地图</div>
                     <div class="nav-item" data-target="days-section">🗓️ 每日行程 <span>⌄</span></div>
                     <div class="nav-item" data-target="weather-section">🌤️ 天气信息</div>
+                    <div class="nav-item" data-target="agent-trace-section">🧠 Agent轨迹</div>
                 </div>
             </aside>
 
@@ -1254,6 +1301,11 @@
                             </div>
                         </div>
                     </div>
+                </div>
+
+                <div id="agent-trace-section" class="card">
+                    <div class="card-head">🧠 智能体执行轨迹</div>
+                    <div id="agent-trace-list" class="card-body agent-trace-list"></div>
                 </div>
 
                 <div id="days-section" class="card itinerary-card">
@@ -1485,6 +1537,7 @@
         renderPlanningNotes(data, payload);
         renderBudget(data, payload);
         renderWeather(data, payload);
+        renderAgentTraces(data);
         renderDays(data, payload);
         renderMapTabs(data);
         renderMap(data, payload, 0);
@@ -1686,6 +1739,36 @@
             <li>${payload.city}出行期间建议预留弹性时间, 便于按天气微调路线。</li>
             ${tips.map(item => `<li>${item}</li>`).join('')}
         `;
+    }
+
+    function renderAgentTraces(data) {
+        const traceList = document.getElementById('agent-trace-list');
+        const traces = data.agentTraces || [];
+        if (!traces.length) {
+            traceList.innerHTML = `
+                <div class="agent-trace-item">
+                    <div class="agent-trace-agent">AgentTrace</div>
+                    <div>
+                        <div class="agent-trace-action">暂无执行轨迹</div>
+                        <div class="agent-trace-meta">当前结果未返回智能体轨迹，可能是旧版本接口响应。</div>
+                    </div>
+                </div>
+            `;
+            return;
+        }
+        traceList.innerHTML = traces.map((trace, index) => `
+            <div class="agent-trace-item">
+                <div>
+                    <div class="agent-trace-agent">${index + 1}. ${trace.agentName || 'Agent'}</div>
+                    <div class="agent-trace-status">${trace.status || 'done'}</div>
+                </div>
+                <div>
+                    <div class="agent-trace-action">${trace.action || '执行任务'}</div>
+                    <div class="agent-trace-meta"><strong>输入:</strong> ${trace.inputSummary || '无'}</div>
+                    <div class="agent-trace-meta"><strong>输出:</strong> ${trace.outputSummary || '无'}</div>
+                </div>
+            </div>
+        `).join('');
     }
 
     function renderDays(data, payload) {

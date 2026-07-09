@@ -1,5 +1,6 @@
 package com.lwl.travelassistant.agent;
 
+import com.lwl.travelassistant.client.LlmClient;
 import com.lwl.travelassistant.model.Attraction;
 import com.lwl.travelassistant.model.AttractionSearchResult;
 import com.lwl.travelassistant.model.Hotel;
@@ -14,6 +15,11 @@ import com.lwl.travelassistant.model.TripPlanRequest;
 import com.lwl.travelassistant.model.WeatherInfo;
 import com.lwl.travelassistant.model.WeatherQueryResult;
 import com.lwl.travelassistant.client.impl.RuleBasedRouteClient;
+import com.lwl.travelassistant.evaluator.BudgetEvaluator;
+import com.lwl.travelassistant.evaluator.DailyPlanEvaluator;
+import com.lwl.travelassistant.evaluator.RouteEvaluator;
+import com.lwl.travelassistant.evaluator.WeatherEvaluator;
+import com.lwl.travelassistant.service.LlmNarrationService;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -23,7 +29,11 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class PlannerAgentTest {
 
-    private final PlannerAgent plannerAgent = new PlannerAgent(new RouteAgent(new RuleBasedRouteClient()));
+    private final PlannerAgent plannerAgent = new PlannerAgent(
+            new RouteAgent(new RuleBasedRouteClient()),
+            new ReflectionAgent(new DailyPlanEvaluator(new BudgetEvaluator(), new RouteEvaluator(), new WeatherEvaluator())),
+            new LlmNarrationService(new DisabledLlmClient())
+    );
 
     @Test
     void shouldBuildStructuredTripPlanFromPlannerInput() {
@@ -77,7 +87,8 @@ class PlannerAgentTest {
                 hotelResult,
                 new PlanningConstraints(true, true, false, false, List.of("轻松节奏", "餐饮避开海鲜")),
                 List.of("优先考虑用户偏好：美食、自然风景"),
-                "请生成杭州旅行计划"
+                "请生成杭州旅行计划",
+                List.of()
         );
 
         TripPlan response = plannerAgent.buildPlan(plannerInput);
@@ -94,5 +105,20 @@ class PlannerAgentTest {
         assertTrue(routePlan.getSteps().size() >= 2);
         assertTrue(routePlan.getTotalDistanceKm() > 0);
         assertTrue(response.getDays().get(0).getEstimatedCost() > 0);
+        assertTrue(response.getPlanningNotes().contains("ReflectionAgent 已对每日方案完成预算、路线、天气反思评估"));
+        assertTrue(response.getAgentTraces().stream().anyMatch(trace -> "ReflectionAgent".equals(trace.getAgentName())));
+    }
+
+    private static class DisabledLlmClient implements LlmClient {
+
+        @Override
+        public boolean isAvailable() {
+            return false;
+        }
+
+        @Override
+        public String chat(String systemPrompt, String userPrompt) {
+            return "";
+        }
     }
 }
