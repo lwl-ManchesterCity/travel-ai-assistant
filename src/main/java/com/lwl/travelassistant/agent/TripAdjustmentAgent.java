@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lwl.travelassistant.client.LlmClient;
 import com.lwl.travelassistant.model.TripPlanRequest;
+import com.lwl.travelassistant.service.RequestOptimizationStrategyService;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
@@ -19,10 +20,14 @@ public class TripAdjustmentAgent {
 
     private final LlmClient llmClient;
     private final ObjectMapper objectMapper;
+    private final RequestOptimizationStrategyService requestOptimizationStrategyService;
 
-    public TripAdjustmentAgent(LlmClient llmClient, ObjectMapper objectMapper) {
+    public TripAdjustmentAgent(LlmClient llmClient,
+                               ObjectMapper objectMapper,
+                               RequestOptimizationStrategyService requestOptimizationStrategyService) {
         this.llmClient = llmClient;
         this.objectMapper = objectMapper;
+        this.requestOptimizationStrategyService = requestOptimizationStrategyService;
     }
 
     public TripAdjustmentDecision adjust(TripPlanRequest originalRequest, String adjustmentPrompt) {
@@ -40,7 +45,7 @@ public class TripAdjustmentAgent {
     }
 
     private TripAdjustmentDecision adjustByLlm(TripPlanRequest originalRequest, String adjustmentPrompt) throws Exception {
-        TripPlanRequest updatedRequest = copyRequest(originalRequest);
+        TripPlanRequest updatedRequest = requestOptimizationStrategyService.copyRequest(originalRequest);
         JsonNode adjustmentNode = requestLlmAdjustment(originalRequest, adjustmentPrompt);
         List<String> appliedChanges = new ArrayList<>();
 
@@ -71,6 +76,7 @@ public class TripAdjustmentAgent {
 
         applyPreferenceChanges(updatedRequest, adjustmentNode, appliedChanges);
         applyExtraRequirementChanges(updatedRequest, adjustmentPrompt, adjustmentNode, appliedChanges);
+        applySharedStrategyActions(updatedRequest, adjustmentPrompt, appliedChanges);
 
         if (appliedChanges.isEmpty()) {
             appliedChanges.add("LLM 已保留原始规划条件，并记录新的调整要求");
@@ -128,7 +134,7 @@ public class TripAdjustmentAgent {
         }
         boolean merged = false;
         for (String extraRequirement : extraRequirements) {
-            mergeExtraRequirement(updatedRequest, extraRequirement);
+            requestOptimizationStrategyService.mergeExtraRequirement(updatedRequest, extraRequirement);
             merged = true;
         }
         if (merged) {
@@ -187,7 +193,7 @@ public class TripAdjustmentAgent {
     }
 
     private TripAdjustmentDecision adjustByRules(TripPlanRequest originalRequest, String adjustmentPrompt) {
-        TripPlanRequest updatedRequest = copyRequest(originalRequest);
+        TripPlanRequest updatedRequest = requestOptimizationStrategyService.copyRequest(originalRequest);
         List<String> appliedChanges = new ArrayList<>();
         String normalizedPrompt = adjustmentPrompt == null ? "" : adjustmentPrompt.trim();
         String lowerPrompt = normalizedPrompt.toLowerCase(Locale.ROOT);
@@ -197,6 +203,7 @@ public class TripAdjustmentAgent {
         applyAccommodationAdjustment(updatedRequest, normalizedPrompt, lowerPrompt, appliedChanges);
         applyPreferenceAdjustment(updatedRequest, normalizedPrompt, lowerPrompt, appliedChanges);
         applyExtraRequirementAdjustment(updatedRequest, normalizedPrompt, appliedChanges);
+        applySharedStrategyActions(updatedRequest, normalizedPrompt, appliedChanges);
 
         if (appliedChanges.isEmpty()) {
             appliedChanges.add("已保留原始规划条件，并记录新的调整要求");
@@ -220,7 +227,7 @@ public class TripAdjustmentAgent {
             }
         }
         if (containsAny(lowerPrompt, "省一点", "便宜点", "控制预算")) {
-            mergeExtraRequirement(updatedRequest, "控制预算，优先高性价比方案");
+            requestOptimizationStrategyService.mergeExtraRequirement(updatedRequest, "控制预算，优先高性价比方案");
             appliedChanges.add("已追加预算收紧约束");
         }
     }
@@ -332,7 +339,7 @@ public class TripAdjustmentAgent {
         List<String> residualRequirements = extractResidualRequirements(normalizedPrompt);
         boolean merged = false;
         for (String residualRequirement : residualRequirements) {
-            mergeExtraRequirement(updatedRequest, residualRequirement);
+            requestOptimizationStrategyService.mergeExtraRequirement(updatedRequest, residualRequirement);
             merged = true;
         }
         if (merged) {
@@ -340,17 +347,39 @@ public class TripAdjustmentAgent {
         }
     }
 
-    private void mergeExtraRequirement(TripPlanRequest request, String extraRequirement) {
-        if (extraRequirement == null || extraRequirement.isBlank()) {
+    private void applySharedStrategyActions(TripPlanRequest updatedRequest,
+                                            String prompt,
+                                            List<String> appliedChanges) {
+        if (prompt == null || prompt.isBlank()) {
             return;
         }
-        String current = request.getExtraRequirements();
-        if (current == null || current.isBlank()) {
-            request.setExtraRequirements(extraRequirement);
-            return;
-        }
-        if (!current.contains(extraRequirement)) {
-            request.setExtraRequirements(current + "；" + extraRequirement);
+        String normalized = prompt.toLowerCase(Locale.ROOT);
+        applySharedAction(updatedRequest, appliedChanges, normalized, "REDUCE_BUDGET", "已应用统一预算收紧策略",
+                "省一点", "便宜点", "控制预算", "缩预算", "预算紧");
+        applySharedAction(updatedRequest, appliedChanges, normalized, "COMPRESS_ROUTE", "已应用统一压缩路线策略",
+                "路线紧凑", "少折返", "别太绕", "压缩路线", "近一点", "同片区");
+        applySharedAction(updatedRequest, appliedChanges, normalized, "REPLACE_OUTDOOR_WITH_INDOOR", "已应用统一室内备选策略",
+                "下雨", "室内", "雨天", "别晒", "避雨");
+        applySharedAction(updatedRequest, appliedChanges, normalized, "UPGRADE_EXPERIENCE", "已应用统一体验升级策略",
+                "品质一点", "高端一点", "住好一点", "体验好一点", "升级体验");
+    }
+
+    private void applySharedAction(TripPlanRequest updatedRequest,
+                                   List<String> appliedChanges,
+                                   String normalizedPrompt,
+                                   String action,
+                                   String appliedMessage,
+                                   String... keywords) {
+        for (String keyword : keywords) {
+            if (normalizedPrompt.contains(keyword.toLowerCase(Locale.ROOT))) {
+                List<String> strategyNotes = new ArrayList<>();
+                requestOptimizationStrategyService.applyAction(updatedRequest, null, action, strategyNotes);
+                if (!strategyNotes.isEmpty()) {
+                    appliedChanges.add(appliedMessage);
+                    appliedChanges.addAll(strategyNotes);
+                }
+                return;
+            }
         }
     }
 
@@ -407,24 +436,6 @@ public class TripAdjustmentAgent {
                 || normalized.contains("慢一点")
                 || normalized.contains("多一点")
                 || normalized.contains("少一点");
-    }
-
-    private String sanitizePersistedExtraRequirements(String extraRequirements) {
-        List<String> cleanedRequirements = extractResidualRequirements(extraRequirements);
-        return cleanedRequirements.isEmpty() ? null : String.join("；", cleanedRequirements);
-    }
-
-    private TripPlanRequest copyRequest(TripPlanRequest originalRequest) {
-        return new TripPlanRequest(
-                originalRequest.getCity(),
-                originalRequest.getStartDate(),
-                originalRequest.getEndDate(),
-                originalRequest.getBudget(),
-                originalRequest.getPreferences() == null ? new ArrayList<>() : new ArrayList<>(originalRequest.getPreferences()),
-                originalRequest.getTransportation(),
-                originalRequest.getAccommodation(),
-                sanitizePersistedExtraRequirements(originalRequest.getExtraRequirements())
-        );
     }
 
     public static class TripAdjustmentDecision {

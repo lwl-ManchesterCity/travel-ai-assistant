@@ -13,6 +13,8 @@ public class TripPlan {
     private Budget budget;
     private List<String> planningNotes;
     private List<AgentTrace> agentTraces;
+    private LoopExecutionSummary loopSummary;
+    private List<LoopIterationTrace> loopIterations;
 
     public TripPlan() {
     }
@@ -26,6 +28,20 @@ public class TripPlan {
                     Budget budget,
                     List<String> planningNotes,
                     List<AgentTrace> agentTraces) {
+        this(city, startDate, endDate, days, weatherInfo, overallSuggestions, budget, planningNotes, agentTraces, null, null);
+    }
+
+    public TripPlan(String city,
+                    String startDate,
+                    String endDate,
+                    List<DayPlan> days,
+                    List<WeatherInfo> weatherInfo,
+                    String overallSuggestions,
+                    Budget budget,
+                    List<String> planningNotes,
+                    List<AgentTrace> agentTraces,
+                    LoopExecutionSummary loopSummary,
+                    List<LoopIterationTrace> loopIterations) {
         this.city = city;
         this.startDate = startDate;
         this.endDate = endDate;
@@ -35,6 +51,8 @@ public class TripPlan {
         this.budget = budget;
         this.planningNotes = planningNotes;
         this.agentTraces = agentTraces;
+        this.loopSummary = loopSummary;
+        this.loopIterations = loopIterations;
     }
 
     public String getCity() {
@@ -107,5 +125,21 @@ public class TripPlan {
 
     public void setAgentTraces(List<AgentTrace> agentTraces) {
         this.agentTraces = agentTraces;
+    }
+
+    public LoopExecutionSummary getLoopSummary() {
+        return loopSummary;
+    }
+
+    public void setLoopSummary(LoopExecutionSummary loopSummary) {
+        this.loopSummary = loopSummary;
+    }
+
+    public List<LoopIterationTrace> getLoopIterations() {
+        return loopIterations;
+    }
+
+    public void setLoopIterations(List<LoopIterationTrace> loopIterations) {
+        this.loopIterations = loopIterations;
     }
 }

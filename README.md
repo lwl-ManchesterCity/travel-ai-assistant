@@ -32,11 +32,11 @@
 * **多 Agent 协作**：拆分景点、酒店、天气、路线、规划、调整等 Agent，职责边界清晰。
 * **真实地图能力**：接入高德地图 POI 搜索、酒店检索、天气预报、路线规划和 Web 地图 JS SDK。
 * **LLM 能力接入**：通过 OpenAI-Compatible 接口接入通义千问，支持自然语言需求解析、行程调整和结果文案润色。
-* **Agent 反思闭环**：`PlannerAgent` 先生成候选方案，再由 `ReflectionAgent` 基于预算、路线和天气进行评估与修正建议。
+* **Loop Engineering 闭环**：`LoopPlanningAgent` 串联 `PlannerAgent -> ReflectionAgent -> LlmCriticAgent -> LoopDecisionExecutor`，实现“生成 - 评估 - 反思 - 修正”的多轮收敛。
 * **Agent 轨迹可视化**：记录各 Agent 的输入、动作、输出和状态，前端可直接查看智能体执行过程。
 * **结构化行程输出**：返回每日景点、酒店、餐饮、路线、预算、天气、地图点位等可消费数据。
-* **预算与路线约束**：在规划阶段加入预算控制、跨天去重、通勤距离压缩、酒店优选和路线评估。
-* **前端完整展示**：支持旅行表单、结果页、预算明细、真实地图、每日路线切换、行程编辑和调整反馈。
+* **预算与路线约束**：在规划阶段加入预算控制、跨天去重、通勤距离压缩、酒店优选、天气室内外切换和路线评估。
+* **前端完整展示**：支持旅行表单、结果页、预算明细、真实地图、每日路线切换、行程编辑、调整反馈和 Agent 轨迹折叠查看。
 * **可部署上线**：支持 Jar 包部署、Systemd 托管和 Nginx 反向代理。
 
 ## 技术栈
@@ -94,22 +94,51 @@
 * 避免跨天重复安排同一景点
 * 对第三方 API 异常提供规则兜底方案
 
+### 5. Loop Planning 自循环优化
+
+系统默认启用多轮循环优化，而不是只生成一次结果就直接返回。
+
+完整闭环如下：
+
+```text
+第 1 步：PlannerAgent 生成候选方案
+第 2 步：ReflectionAgent 对预算 / 路线 / 天气 / 体验进行打分和评估
+第 3 步：LlmCriticAgent 给出下一步最优动作
+第 4 步：LoopDecisionExecutor 修改下一轮请求条件
+第 5 步：重新调用 PlannerAgent 生成新方案
+重复以上过程，直到：
+  - 达到可接受状态
+  - 连续多轮无改善
+  - 请求调整重复
+  - 达到最大循环轮次
+```
+
+当前支持的典型优化动作：
+
+* `REDUCE_BUDGET`：降低酒店档位、压缩高成本景点、收紧预算策略
+* `COMPRESS_ROUTE`：优先更近的景点组合，减少远距离通勤
+* `REPLACE_OUTDOOR_WITH_INDOOR`：恶劣天气时增加室内备选约束
+* `UPGRADE_EXPERIENCE`：预算充足时提升体验档位
+
 ## 系统链路
 
-### 旅行计划生成链路
+### 主规划链路
 
 ```text
 TripPlanController
   -> TripPlanningService
-    -> PlannerInputBuilder
-      -> AttractionAgent -> AttractionClient -> AmapAttractionClient
-      -> HotelAgent      -> HotelClient      -> AmapHotelClient
-      -> WeatherAgent    -> WeatherClient    -> AmapWeatherClient
-      -> RequirementAnalysisService          -> LLM
-    -> PlannerAgent
-      -> ReflectionAgent -> DailyPlanEvaluator
-      -> RouteAgent      -> RouteClient      -> AmapRouteClient
-    -> TripPlan
+    -> LoopPlanningAgent
+      -> PlannerInputBuilder
+        -> AttractionAgent -> AttractionClient -> AmapAttractionClient
+        -> HotelAgent      -> HotelClient      -> AmapHotelClient
+        -> WeatherAgent    -> WeatherClient    -> AmapWeatherClient
+        -> RequirementAnalysisService          -> LLM / 规则解析
+      -> PlannerAgent
+        -> RouteAgent      -> RouteClient      -> AmapRouteClient
+      -> ReflectionAgent   -> DailyPlanEvaluator
+      -> LlmCriticAgent    -> LLM / fallback critique
+      -> LoopDecisionExecutor
+    -> TripPlan（含 loopSummary / loopIterations / agentTraces）
 ```
 
 ### 行程调整链路
@@ -123,11 +152,25 @@ TripPlanController
     -> planTrip
 ```
 
+### 前端结果页链路
+
+```text
+index.html
+  -> POST /api/trips/plan
+  -> 渲染 TripPlan
+    -> 行程总览
+    -> 预算进度与预算明细
+    -> 高德真实地图 + 每日路线切换
+    -> 每日行程卡片
+    -> 天气信息
+    -> Agent 执行轨迹与 Loop 轮次
+```
+
 ## 项目结构
 
 ```text
 src/main/java/com/lwl/travelassistant
-├── agent        # Agent 编排单元，例如景点、酒店、天气、路线、规划、调整
+├── agent        # Agent 编排单元，例如景点、酒店、天气、路线、规划、反思、循环优化、调整
 ├── client       # 外部能力抽象与实现，例如高德、规则兜底、LLM Client
 ├── config       # 配置属性、客户端配置、运行时日志
 ├── controller   # HTTP 接口入口
@@ -215,6 +258,12 @@ export TRAVEL_LLM_ENABLED=true
 export TRAVEL_LLM_ENABLED=false
 ```
 
+如果想关闭 loop 自循环，只保留单轮规划：
+
+```bash
+export TRAVEL_LOOP_ENABLED=false
+```
+
 ### 3. 启动项目
 
 ```bash
@@ -241,6 +290,11 @@ src/main/resources/application.yml
 
 ```yaml
 travel:
+  loop:
+    enabled: ${TRAVEL_LOOP_ENABLED:true}
+    max-rounds: ${TRAVEL_LOOP_MAX_ROUNDS:3}
+    max-no-improvement-rounds: ${TRAVEL_LOOP_MAX_NO_IMPROVEMENT_ROUNDS:2}
+
   llm:
     enabled: ${TRAVEL_LLM_ENABLED:false}
     provider: ${TRAVEL_LLM_PROVIDER:dashscope}
@@ -270,6 +324,12 @@ travel:
     hotel: amap      # 或 mock
     route: amap      # 或 mock
 ```
+
+说明：
+
+* `travel.loop.enabled=false` 时，系统会直接走单轮 `PlannerAgent`
+* `travel.loop.enabled=true` 时，系统会走完整 Loop Planning 闭环
+* 路线、天气、景点、酒店任一真实接口受限时，会自动回退到规则 provider，保证主链路可用
 
 ## 打包与部署
 
@@ -310,6 +370,14 @@ mvn test
 * `TripPlanControllerTest`：验证接口成功返回和参数校验。
 * `PlannerAgentTest`：验证规划链路核心逻辑。
 
+建议手工验证场景：
+
+* 低预算场景：确认系统会自动压缩酒店或景点
+* 暴雨天气场景：确认系统会优先考虑室内备选
+* 高预算场景：确认系统能够放宽体验约束
+* 行程调整场景：确认自然语言编辑会触发重新规划
+* Agent 轨迹场景：确认前端能看到 loop 轮次与执行步骤
+
 ## GitHub 提交前注意
 
 请确认不要提交以下敏感信息：
@@ -329,9 +397,9 @@ git diff
 
 ## 后续优化方向
 
-* 接入真实景点图片来源，替换当前占位图
+* 接入稳定的真实景点图片来源，替换当前占位图
 * 将前端拆成 Vue / React 独立工程
 * 增加用户登录和历史行程保存
-* 增加更完整的 Agent 评估指标和 Benchmark
+* 增加更细粒度的 Reflection 评分机制和可解释性指标
 * 引入缓存，降低高德 API 和 LLM 调用频率
 * 增加 Dockerfile 和 Docker Compose，简化部署

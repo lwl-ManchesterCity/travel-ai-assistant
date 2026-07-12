@@ -1,8 +1,8 @@
 package com.lwl.travelassistant.service;
 
-import com.lwl.travelassistant.agent.TripAdjustmentAgent;
+import com.lwl.travelassistant.agent.LoopPlanningAgent;
 import com.lwl.travelassistant.agent.PlannerAgent;
-import com.lwl.travelassistant.model.PlannerInput;
+import com.lwl.travelassistant.agent.TripAdjustmentAgent;
 import com.lwl.travelassistant.model.TripAdjustmentRequest;
 import com.lwl.travelassistant.model.TripAdjustmentResponse;
 import com.lwl.travelassistant.model.TripPlan;
@@ -15,21 +15,19 @@ import java.util.List;
 @Service
 public class TripPlanningService {
 
-    private final PlannerInputBuilder plannerInputBuilder;
-    private final PlannerAgent plannerAgent;
     private final TripAdjustmentAgent tripAdjustmentAgent;
+    private final LoopPlanningAgent loopPlanningAgent;
 
     public TripPlanningService(PlannerInputBuilder plannerInputBuilder,
                                PlannerAgent plannerAgent,
-                               TripAdjustmentAgent tripAdjustmentAgent) {
-        this.plannerInputBuilder = plannerInputBuilder;
-        this.plannerAgent = plannerAgent;
+                               TripAdjustmentAgent tripAdjustmentAgent,
+                               LoopPlanningAgent loopPlanningAgent) {
         this.tripAdjustmentAgent = tripAdjustmentAgent;
+        this.loopPlanningAgent = loopPlanningAgent;
     }
 
     public TripPlan planTrip(TripPlanRequest request) {
-        PlannerInput plannerInput = plannerInputBuilder.build(request);
-        return plannerAgent.buildPlan(plannerInput);
+        return loopPlanningAgent.plan(request);
     }
 
     public TripAdjustmentResponse adjustTrip(TripAdjustmentRequest request) {

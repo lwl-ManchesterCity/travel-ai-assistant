@@ -5,6 +5,10 @@ spring:
   application:
     name: travel-assistant
 travel:
+  loop:
+    enabled: ${TRAVEL_LOOP_ENABLED:true}
+    max-rounds: ${TRAVEL_LOOP_MAX_ROUNDS:3}
+    max-no-improvement-rounds: ${TRAVEL_LOOP_MAX_NO_IMPROVEMENT_ROUNDS:2}
   llm:
     enabled: ${TRAVEL_LLM_ENABLED:false}
     provider: ${TRAVEL_LLM_PROVIDER:dashscope}
