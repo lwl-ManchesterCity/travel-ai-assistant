@@ -39,6 +39,14 @@
 * **前端完整展示**：支持旅行表单、结果页、预算明细、真实地图、每日路线切换、行程编辑、调整反馈和 Agent 轨迹折叠查看。
 * **可部署上线**：支持 Jar 包部署、Systemd 托管和 Nginx 反向代理。
 
+## 与参考实现的差异（Datawhale《hello-agents》第 13 章）
+
+参考章节是 Python + HelloAgents 版本（MultiAgentTripPlanner：景点/天气/酒店取数 + 规划，高德走 MCP，Vue3 前端）。本项目是 Java 17 + Spring Boot 3 的另一种实现，并在此之上扩展了三块（按代码整理）：
+
+* **多轮闭环**：`LoopPlanningAgent` 串联 `Planner → Reflection → LlmCritic → LoopDecisionExecutor`，把「生成-评估-反思-修正」跑成循环；轮数与「连续无改进即停」由 `TRAVEL_LOOP_MAX_ROUNDS` / `TRAVEL_LOOP_MAX_NO_IMPROVEMENT_ROUNDS` 控制。参考实现是单轮生成。
+* **Agent 轨迹可视化**：`AgentTrace` / `LoopIterationTrace` 记录各 Agent 的输入、动作、输出与状态，前端可折叠查看每一轮的演进。
+* **数据源可切换、带兜底**：`selector` 按 `TRAVEL_PROVIDERS_*` 配置在「高德真实接口」和「本地规则兜底」之间切换，单个数据源不可用时仍能出完整行程；参考实现只有 MCP 一条路。
+
 ## 技术栈
 
 | 分类   | 技术                                               |
